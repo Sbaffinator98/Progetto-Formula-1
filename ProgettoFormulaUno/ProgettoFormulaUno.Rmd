@@ -1,0 +1,525 @@
+---
+title: "I piloti di 'Formula Uno' nel tempo e nello spazio"
+author: "Dorigo Andrea"
+date: "02/02/2022"
+output:
+  ioslides_presentation:
+    css: ../style.css
+    incremental: yes
+  html_document:
+    df_print: paged
+  pdf_document: default
+editor_options:
+  chunk_output_type: inline
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+## Analisi Formula 1
+La 'Formula 1'  è la massima categoria di vetture monoposto a ruote scoperte da corsa su circuito. Viene creata nel 1948 e il primo campionato mondiale avviene nel 1950, con avvincenti gare sparse per tutto il mondo e vantando i migliori di piloti in circolazione, considerata ormai la massima espressione delle corse automobilistiche. 
+Da allora ogni anno è stato organizzato un campionato, con cambi di regole, diversi circuiti e nuovi piloti. 
+
+* Come la 'Formula 1' ha vissuto nello spazio tenedo conto delle nazioni
+* Come il sistema di punteggio della 'Formula 1' è cambiato nel tempo e come ha influenzato i record storici, in particolare in relazione ai piloti 'Hamilton' e 'Schumacher'
+
+
+```{r cars, message=FALSE, warning=FALSE, include=FALSE, paged.print=FALSE}
+library(tidyverse)
+library(dplyr)
+library(ggplot2)
+library(treemap)
+```
+
+
+```{r pressure, echo=FALSE, message=FALSE, warning=FALSE}
+#DATASET CIRCUITI
+circuito = read.csv("circuits.csv",sep = ",", na = "",fileEncoding='UTF-8')
+circuitoA = circuito %>%
+    rename(
+    idCircuito = circuitId,
+    rifCircuito = circuitRef,
+    nomeCircuito = name,
+    luogo = location,
+    stato = country,
+  )  %>%
+  select(idCircuito,rifCircuito,nomeCircuito,luogo,stato)
+# head(circuitoA,3)
+
+#DATASET COSTRUTTORI
+costruttore = read.csv("constructors.csv",sep = ",", na = "",fileEncoding='UTF-8')
+costruttoreA = costruttore %>%
+  rename(
+    idCostruttore = constructorId,
+    rifCostruttore = constructorRef,
+    nomeCostruttore = name,
+    nazionalitaCostruttore = nationality
+         ) %>%
+  select(-url)
+# head(costruttoreA,3)
+
+#DATASET PILOTI
+pilota = read.csv("drivers.csv",sep = ",", na = "\\N" ,fileEncoding='UTF-8')
+pilotaA = pilota %>% 
+  rename(
+    idPilota = driverId,
+    rifPilota = driverRef,
+    numeroPilota = number,
+    codicePilota = code,
+    nomePilota = forename,
+    cognomePilota = surname,
+    dataNascitaPilota = dob,
+    nazionalitaPilota = nationality,
+  ) %>% 
+  select(-url)
+# head(pilotaA,3)
+
+#DATASET GARE
+gara = read.csv("races.csv",sep = ",", na = "\\N",fileEncoding='UTF-8')
+garaA = gara %>% 
+  rename(
+    idGara = raceId,
+    annoGara = year,
+    roundGara = round,
+    idCircuito = circuitId,
+    nomeGara = name,
+    dataGara = date,
+    oraGara = time,
+  ) %>% 
+  select(-url) %>% 
+  #elimino l'anno 2022 per consistenza dei dati essondo solo gare programmate non svolte
+  filter(annoGara != 2022)
+# head(garaA,3)
+
+#DATASET RISULTATI
+risultato = read.csv("results.csv",sep = ",", na = "\\N",fileEncoding='UTF-8')
+risultatoA = risultato %>% 
+  rename(
+    idRisultato = resultId,
+    idGara = raceId,
+    idPilota = driverId,
+    idCostruttore = constructorId,
+    numeroAuto = number,
+    posPartenza = grid,
+    posArrivo = position,
+    posRanking = positionOrder,
+    punti = points,
+    giri = laps,
+    tempo = time,
+    tempoms = milliseconds,
+    giroVeloce = fastestLap,
+    rankGiroVeloce = rank,
+    tempoGiroVeloce = fastestLapTime,
+    velocitaGiroVeloce = fastestLapSpeed,
+    idStato = statusId
+  ) %>% 
+  select(-positionText)
+# head(risultatoA,3)
+
+#DATASET CLASSIFICA PILOTI
+classificaPiloti = read.csv("driver_standings.csv",sep = ",", na = "\\N",fileEncoding='UTF-8')
+classificaPilotiA = classificaPiloti %>% 
+  rename(
+    idClassificaPiloti = driverStandingsId,
+    idGara = raceId,
+    idPilota = driverId,
+    punti = points,
+    posizione = position,
+    vittorie = wins
+  ) %>% 
+  select(-positionText)
+# head(classificaPilotiA,3)
+
+#DATASET RISULTATI COSTRUTTORI
+risultatoCostuttori = read.csv("constructor_results.csv",sep = ",", na = "\\N",fileEncoding='UTF-8')
+risultatoCostuttoriA = risultatoCostuttori %>% 
+  rename(
+    idRisultatoCostuttori = constructorResultsId,
+    idGara = raceId,
+    idConstruttore = constructorId,
+    idCostruttore = constructorId,
+    punti = points,
+  ) %>% 
+  select(-status)
+# head(risultatoCostuttoriA,3)
+
+```
+
+## Le nazioni per numero di gare ospitate
+
+```{r echo=FALSE, message=FALSE, warning=FALSE}
+statoContinente = read.csv("countryContinent.csv",sep = ",", na = "\\N",fileEncoding='UTF-8')
+nazionalita = read.csv("countries.csv",sep = ",", na = "\\N",fileEncoding='UTF-8')
+statoContinenteNazionalita = left_join(statoContinente,nazionalita, by = c("country"="Name"))%>%  
+  select(country,continent,Nationality)
+
+numeroGarePerNazione = left_join(garaA, circuitoA) %>% 
+  select(idGara,stato) %>% 
+  count(stato) %>% 
+  arrange(-n) %>% 
+  mutate(num=row_number())%>% 
+  left_join(statoContinenteNazionalita, by = c("stato"="country"))
+
+ggplot(data = numeroGarePerNazione) +
+  geom_bar(aes(x = reorder(stato,num), y = n,fill=continent),stat="identity")+
+  theme(axis.text.x = element_text(angle=90))+
+  labs(title="Numero gare per nazione")+
+  labs(x="Nazione",y="Numero Gare")
+
+```
+
+## Top 30 città per numero gare ospitate
+```{r echo=FALSE, message=FALSE, warning=FALSE}
+numeroGarePerCitta = left_join(garaA, circuitoA)%>% 
+  select(idGara,luogo,stato) %>% 
+  count(luogo,stato) %>% 
+  arrange(-n) %>% 
+  mutate(num=row_number()) %>% 
+  filter(num<31)%>%
+  left_join(statoContinenteNazionalita, by = c("stato"="country"))
+
+ggplot(data = numeroGarePerCitta) +
+  geom_bar(aes(y = reorder(luogo,-num), x = n,fill=continent,color=continent),stat="identity",alpha=.9)+
+  labs(title="Numero gare per città")+
+  labs(y="città",x="Numero Gare")
+
+```
+
+## Di quale nazionalità sono i piloti
+```{r echo=FALSE, message=FALSE, paged.print=TRUE}
+partecipazioniPilotiConNazionalita = left_join(risultatoA, pilotaA)%>% 
+  select(idRisultato,idGara,idPilota,rifPilota,nazionalitaPilota,punti) %>% 
+  mutate(num=row_number())
+
+garePartecipatePerNazione = partecipazioniPilotiConNazionalita %>% 
+  count(nazionalitaPilota) %>% 
+  arrange(-n) %>% 
+  mutate(rank = row_number())%>% 
+  left_join(statoContinenteNazionalita, by = c("nazionalitaPilota"="Nationality"))
+
+
+ggplot(data = garePartecipatePerNazione) +
+  geom_bar(aes(x = reorder(nazionalitaPilota,rank), y = n,fill=continent),stat="identity",alpha=.9) +
+  theme(axis.text.x = element_text(angle=90)) +
+  labs(title="Numero gare percorse per nazionalità") +
+  labs(x="Nazionalità",y="Numero gare percorse")
+
+```
+
+## Di quale nazionalità sono i piloti
+
+```{r echo=FALSE, message=FALSE, warning=FALSE}
+treemap(garePartecipatePerNazione, index=c("continent","nazionalitaPilota"),     vSize="n", type="index",  palette = "Set1", title="",
+    fontsize.labels=c(14,10), 
+    fontcolor.labels=c("black","white"),
+    fontface.labels=c(2,1),
+    bg.labels=c("transparent"),
+    align.labels=list(
+        c("left", "top"), 
+        c("right", "bottom")
+        ),
+    overlap.labels=0.5,
+    inflate.labels=F,
+)
+```
+
+
+## Stagioni corse per nazionalità del costruttore
+```{r echo=FALSE, message=FALSE, paged.print=TRUE}
+
+anniStagioniNazionalitaCostruttore = left_join(risultatoCostuttoriA,garaA) %>% 
+  select(idCostruttore,annoGara)%>% 
+  unique() %>% 
+  left_join(costruttoreA) %>% 
+  mutate(n=1) %>% 
+  select(nomeCostruttore,nazionalitaCostruttore,n)%>% 
+  group_by(nazionalitaCostruttore) %>% 
+  summarize(tot=sum(n))%>% 
+  left_join(statoContinenteNazionalita, by = c("nazionalitaCostruttore"="Nationality"))
+
+
+
+ggplot(data = anniStagioniNazionalitaCostruttore) +
+  geom_bar(aes(x = reorder(nazionalitaCostruttore,-tot), y = tot,fill=continent),stat="identity",alpha=.9) +
+  # scale_fill_gradient("Numero Gare",low="coral",high="coral3") +
+  theme(axis.text.x = element_text(angle=90)) +
+  labs(title="Numero stagioni a cui i costruttori hanno partecipato per nazionalità") +
+  labs(x="Nazionalità",y="Numero stagioni partecipate")
+
+```
+
+## Come si correlano questi dati
+```{r echo=FALSE, message=FALSE, paged.print=TRUE}
+vincitePilotiConNazionalita = left_join(risultatoA, pilotaA)%>%
+  filter(posArrivo == 1)%>%
+  select(idRisultato,idGara,idPilota,rifPilota,nazionalitaPilota,punti) %>%
+  # count(rifPilota) %>%
+  # arrange(-n) %>%
+  mutate(num=row_number())
+
+gareVintePerNazione = vincitePilotiConNazionalita %>% 
+  count(nazionalitaPilota) %>%  
+  arrange(-n)%>%  
+  left_join(statoContinenteNazionalita, by = c("nazionalitaPilota"="Nationality")) 
+
+anniStagioniNazionalitaCostruttore1 = anniStagioniNazionalitaCostruttore %>% select(-country,-continent)
+garePartecipatePerNazione1 = garePartecipatePerNazione %>% select(-country,-continent)
+gareVintePerNazione1 = gareVintePerNazione %>% select(-country,-continent)
+
+
+nazionalitaData = full_join(anniStagioniNazionalitaCostruttore1,garePartecipatePerNazione1,by=c("nazionalitaCostruttore" = "nazionalitaPilota")) %>% 
+  full_join(gareVintePerNazione1,by=c("nazionalitaCostruttore" = "nazionalitaPilota"))%>%
+  rename(nazionalita = nazionalitaCostruttore,
+        stagioniCostruttore = tot,
+        garePilota = n.x,
+        vittoriePilota = n.y) %>% 
+  select(-rank)
+
+nazionalitaData[is.na(nazionalitaData)] = 0
+
+nazionalitaData1 = nazionalitaData %>% select(-nazionalita)
+cor1 = cor(nazionalitaData1,use = "complete.obs", method="pearson")
+
+
+# Plotto la correlazione di pearson
+corrplot::corrplot.mixed(cor1, lower="number", upper="ellipse")
+
+```
+
+## Sistema di punteggio nella storia
+Negli anni il sistema di assegnazioni dei punti è mutato diverse volte. I punti assegnati sono determinati dalla posizione di arrivo a fine gara. L'ammontare di punti è variato molto con il trascorrere del tempo, nel primo campionato ufficiale del 1950 venivano assegnati 8 punti per una vittoria a scalare fino a 2 punti alla quinta posizione, intorno agli anni 90 il vincitore guadagnava 10 punti in classifica e anche il sesto a concludere la gara prendeva un punto, fino ad oggi che il vincitore prendere 25 punti e vengono premiati primi 10.
+Negli anni, inoltre, sono stati testati diversi 'punti bonus' che vengono assegnati secondo regole aggiuntive.
+
+
+## Chi ha segnato più punti con il sistema di punti nella storia
+```{r echo=FALSE, message=FALSE, paged.print=TRUE}
+
+puntiTotaliStorici = left_join(risultatoA, pilotaA)%>% 
+  select(rifPilota,punti) %>% 
+  group_by(rifPilota) %>% 
+  summarize(storico = sum(punti)) %>% 
+  arrange(-storico) %>% 
+  mutate(rankStorico=row_number())
+
+# numeroGarePerCitta
+
+ggplot(data = puntiTotaliStorici  %>% 
+  filter(rankStorico<21)) +
+  geom_bar(aes(x = reorder(rifPilota,rankStorico), y = storico,fill=storico),stat="identity",alpha=.9)+
+  # scale_fill_gradient("Totale Punti Vinti")+
+  scale_fill_gradient("Totale Punti Vinti",low="coral",high="coral3")+
+  theme(axis.text.x = element_text(angle=90))+
+  labs(title="Totali punti vinti dai singoli piloti con il sistema di punti mutante nel tempo")+
+  labs(x="pilota",y="punti accumulati")
+
+```
+
+## Modernizzazione dei punteggi storici
+Cosa succede se oggi ricalcoliamo i punteggi di tutta la storia della 'Formula UNO' adattando il formato a quello moderno, senza però tenere conto delle regole per cui i piloti una volta non competevano.
+
+## Chi ha segnato più punti con il sistema di punti corrente
+```{r echo=FALSE, message=FALSE, paged.print=TRUE}
+
+modernizzaPunteggio = function(df,colrisultato){
+  x = 0
+  y = c()
+  for(i in 1:length(colrisultato)){
+    if(colrisultato[i] %in% 1:20){  
+        x = switch(colrisultato[i],25,18,15,12,10,8,6,4,2,1,0,0,0,0,0,0,0,0,0,0)
+      } else{
+        x=0
+      }
+    y = append(y,x)
+  }
+  return(y)
+}
+df1 = left_join(risultatoA, pilotaA)
+punteggioModerno = modernizzaPunteggio(df1,df1$posArrivo)
+
+
+puntiTotaliModerni = left_join(risultatoA, pilotaA) %>%
+  cbind(punteggioModerno) %>% 
+  # select(idRisultato ,rifPilota,posArrivo ,punti,punteggioModerno)
+  select(rifPilota,punteggioModerno) %>%
+  group_by(rifPilota) %>%
+  summarize(moderno = sum(punteggioModerno)) %>%
+  arrange(-moderno) %>%
+  mutate(rankModerno=row_number())
+
+# numeroGarePerCitta
+
+ggplot(data = puntiTotaliModerni %>%
+  filter(rankModerno<21)) +
+  geom_bar(aes(x = reorder(rifPilota,rankModerno), y = moderno,fill=moderno),stat="identity",alpha=.9)+
+  scale_fill_gradient("Totale Punti Vinti",low="coral",high="coral3")+
+  theme(axis.text.x = element_text(angle=90))+
+  labs(title="Totali punti vinti dai singoli piloti con il sistema di punti mutante nel tempo")+
+  labs(x="pilota",y="punti accumulati")
+
+```
+
+## Differenze tra vecchio punteggio e nuovo
+```{r echo=FALSE, message=FALSE, paged.print=TRUE}
+
+comparazionePunteggiStorici = full_join(puntiTotaliStorici,puntiTotaliModerni, by = "rifPilota") %>% 
+  mutate(sommaPunti = moderno+storico) %>% 
+  arrange(-sommaPunti) %>% 
+  mutate(rank=row_number())
+
+#Faccio un gather per allungare la mia tabella larga siccome per usare un plot a barre comparativo tra 2 tipologie diverse ne ho bisogno! 
+comparazionePunteggiStorici1 = comparazionePunteggiStorici %>% 
+  gather(key="vecchionuovo",
+         value="punti",
+         c(moderno,storico)) %>% 
+         filter(rank<21)
+
+# numeroGarePerCitta
+ggplot(data = comparazionePunteggiStorici1 ) +
+  geom_bar(aes
+           (x = reorder(rifPilota,rankModerno),y = punti,fill= vecchionuovo),
+           stat="identity",
+           position = position_dodge(),
+           alpha=.9) +
+  theme(axis.text.x = element_text(angle=90))+
+  labs(title="Totali punti vinti dai singoli piloti con il sistema di punti mutante nel tempo")+
+  labs(x="pilota",y="punti accumulati")+
+  labs(fill="Sistema di \nassegnazione dei punti")
+```
+
+## Quanto vale un punto moderno rispetto ad un punto storico
+```{r echo=FALSE, message=FALSE, paged.print=TRUE}
+
+numGarePerAnno = garaA %>%
+  count(annoGara)
+
+lmNumGarePerAnno = lm(n ~ annoGara, data = numGarePerAnno)
+
+coefficientePunti = numGarePerAnno %>% 
+  mutate(coefficiente = 20/n)
+
+ggplot(data = coefficientePunti, aes(x=annoGara ))+
+  geom_bar(aes(y=n),stat="identity", size=.1, fill="cyan", color = "cyan", alpha =1)+
+    # geom_smooth(aes(y=n),size = 1, color="blue",alpha = 0.0)+
+  geom_line(aes(y=coefficiente/0.13),size = 0, color="blue",alpha = 0)+
+  scale_y_continuous(
+    name = "numero gare",
+    sec.axis = sec_axis(~.*0.13, name="coefficiente")
+  )+  geom_abline(intercept = lmNumGarePerAnno$coefficients[1],
+              slope = lmNumGarePerAnno$coefficients[2],
+              color = "red")
+
+
+```
+
+## Quanto vale un punto moderno rispetto ad un punto storico
+```{r echo=FALSE, message=FALSE, paged.print=TRUE}
+
+ggplot(data = coefficientePunti, aes(x=annoGara ))+
+  geom_bar(aes(y=n),stat="identity", size=.1, fill="cyan", color = "cyan", alpha =1)+
+    # geom_smooth(aes(y=n),size = 1, color="blue",alpha = 0.0)+
+  geom_line(aes(y=coefficiente/0.13),size = 0.2, color="blue",alpha = 0.5)+
+  scale_y_continuous(
+    name = "numero gare",
+    sec.axis = sec_axis(~.*0.13, name="coefficiente")
+  )+  geom_abline(intercept = lmNumGarePerAnno$coefficients[1],
+              slope = lmNumGarePerAnno$coefficients[2],
+              color = "red")
+
+
+```
+
+## Normalizzare lo storico dei punti rispetto al numero di gare
+
+Grazie a questo coefficiente posso evalutare sullo stesso piano di merito un campionato con un numero diverso di gare rispetto ad un altro.
+
+<!-- ## Punteggio moderno applicato al numero di gare -->
+```{r echo=FALSE, message=FALSE, paged.print=TRUE}
+
+df1 = left_join(risultatoA, pilotaA)
+punteggioModerno = modernizzaPunteggio(df1,df1$posArrivo)
+
+risultatiGareConAnno = left_join(left_join(risultatoA, pilotaA),garaA) %>%
+  select(idRisultato,idPilota,rifPilota,posArrivo,punti,annoGara) %>%
+  cbind(punteggioModerno)
+
+risultatiGareConPunteggioNormalizzato = left_join(risultatiGareConAnno,coefficientePunti) %>%
+  mutate(punteggioNormalizzato = punteggioModerno*coefficiente) %>%
+  select(rifPilota,punti,punteggioModerno,punteggioNormalizzato) %>%
+  group_by(rifPilota) %>%
+  summarize(
+    storico= sum(punti),
+    moderno = sum(punteggioModerno),
+    normalizzato = sum(punteggioNormalizzato)) %>%
+  arrange(-normalizzato) %>%
+  mutate(rank=row_number()) %>% 
+  gather(key="vecchionuovo",
+         value="punti",
+         c(moderno,storico,normalizzato)) %>%
+         filter(rank<21)
+
+ggplot(data = risultatiGareConPunteggioNormalizzato ) +
+  geom_bar(aes
+           (x = reorder(rifPilota,rank),y = punti,fill= vecchionuovo),
+           stat="identity",
+           position = position_dodge(),
+           alpha=.9) +
+  theme(axis.text.x = element_text(angle=90))+
+  labs(title="Totali punti vinti dai singoli piloti con il sistema di punti mutante nel tempo")+
+  labs(x="pilota",y="punti accumulati")+
+  labs(fill="Sistema di \nassegnazione dei punti")
+  
+```
+
+## Come sono distribuite le vittorie del campionato piloti tra i costruttori
+```{r echo=FALSE, message=FALSE, warning=FALSE, paged.print=TRUE}
+
+#trovo la tabella dei punteggi della ultima gara di ogni stagione
+classificaCampionatoPiloti = left_join(classificaPilotiA,garaA) %>% 
+  left_join(numGarePerAnno) %>% 
+  filter(roundGara == n,posizione == 1) %>% 
+  left_join(pilotaA)%>% 
+  left_join(risultatoA,by = c("idGara", "idPilota")) %>% 
+  left_join(costruttoreA) %>% 
+  select(annoGara,cognomePilota,nomeCostruttore)
+
+#trovo quanti campionati erano stati vinti dai costruttori
+campionatiVintiDaiCostruttori = classificaCampionatoPiloti %>% 
+  select(-cognomePilota) %>% 
+  arrange(annoGara) %>% 
+  mutate(n=1) %>% 
+  group_by(nomeCostruttore)%>% 
+  summarize(tot = sum(n))
+
+#trovo quanti campionati erano stati vinti dai costruttori
+campionatiVintiDaiCostruttori = classificaCampionatoPiloti %>% 
+  arrange(annoGara) %>% 
+  mutate(n=1) %>% 
+  group_by(nomeCostruttore,cognomePilota)%>% 
+  summarize(tot = sum(n))
+ 
+treemap(campionatiVintiDaiCostruttori, index=c("nomeCostruttore","cognomePilota"),     vSize="tot", type="index",  palette = "Set1", title="",
+
+    fontsize.labels=c(14,10),
+    fontcolor.labels=c("black","white"),
+    fontface.labels=c(2,1),
+    bg.labels=c("transparent"),
+    align.labels=list(
+        c("left", "top"),
+        c("right", "bottom")
+        ),
+    overlap.labels=0.9,
+    inflate.labels=F,
+)
+
+```
+
+
+##  FINE
+
+Grazie per l'attenzione
+
+
+
+
+
